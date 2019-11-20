@@ -20,6 +20,10 @@ import argparse
 from model import TCVAE
 import collections
 from gensim.models import KeyedVectors
+
+import warnings
+warnings.filterwarnings("ignore")
+
 FLAGS = None
 # tf.enable_eager_execution()
 def add_arguments(parser):

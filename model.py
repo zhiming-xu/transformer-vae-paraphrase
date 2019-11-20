@@ -36,7 +36,7 @@ class TCVAE():
             self.input_lens = tf.placeholder(tf.int32, [None])
             self.targets = tf.placeholder(tf.int32, [None, None])
             self.weights = tf.placeholder(tf.float32, [None, None])
-            self.input_windows = tf.placeholder(tf.float32, [None, 4, None])
+            self.input_windows = tf.placeholder(tf.float32, [None, 1, None])
             self.which = tf.placeholder(tf.int32, [None])
 
         else:
@@ -45,7 +45,7 @@ class TCVAE():
             self.input_positions = tf.placeholder(tf.int32, [None, None])
             self.input_masks = tf.placeholder(tf.int32, [None, None, None])
             self.input_lens = tf.placeholder(tf.int32, [None])
-            self.input_windows = tf.placeholder(tf.float32, [None, 4, None])
+            self.input_windows = tf.placeholder(tf.float32, [None, 1, None])
             self.which = tf.placeholder(tf.int32, [None])
 
 
@@ -117,7 +117,7 @@ class TCVAE():
                     post_outputs = post_outputs + inputs
                     post_inputs = normalize(post_outputs)
 
-            big_window = windows[0] + windows[1] + windows[2] + windows[3]
+            big_window = windows[0]
             post_encode, weight = w_encoder_attention(self.query,
                                                  post_inputs,
                                                  self.input_lens,
@@ -202,7 +202,8 @@ class TCVAE():
                 # which_stn = which
             else:
                 x = random.choice(data)
-                which_stn = random.randint(0, 4)
+                # either of them is the paraphrase of the other
+                which_stn = random.randint(0, 1)
 
             input_which.append(which_stn)
             mask = []
@@ -212,7 +213,7 @@ class TCVAE():
             input_mask = []
             target_id = []
             weight = []
-            for j in range(0,5):
+            for j in range(0, 2):
                 # add begin of sentence token_idx
                 input_id.append(GO_ID)
                 # add sentence no.
@@ -268,6 +269,7 @@ class TCVAE():
                     mask.append(1)
                 # for the sentence we would like to mask
                 if j == which_stn:
+                    # pad the target sentence to len `max_single_length`
                     for k in range(len(x[j]) + 2, self.max_single_length):
                         input_id.append(PAD_ID)
                         input_stn_id.append(j)
@@ -277,10 +279,10 @@ class TCVAE():
                         mask.append(0)
             # length of this story (5 sentences)
             input_lengths.append(len(input_id))
+            # pad the whole story to len `max_story_length`
             for k in range(0, self.max_story_length - input_lengths[i]):
-                # pad the last sentence
                 input_id.append(PAD_ID)
-                input_stn_id.append(4)
+                input_stn_id.append(1)
                 input_position.append(0)
                 target_id.append(PAD_ID)
                 weight.append(0.0)
@@ -296,9 +298,9 @@ class TCVAE():
             last = 0
             window = []
 
-            for k in range(0,5):
+            for k in range(0,2):
                 start = last
-                if k != 4:
+                if k != 1:
                     # the last position of the k'th sentence
                     last = input_stn_id.index(k + 1)
                 else:
@@ -308,6 +310,7 @@ class TCVAE():
             input_windows.append(window)
 
             for k in range(input_lengths[i]):
+                # for every word in the i'th story
                 if input_stn_id[k] != which_stn:
                     input_mask.append(mask)
                 else:
@@ -316,7 +319,6 @@ class TCVAE():
 
             for k in range(input_lengths[i], self.max_story_length):
                 input_mask.append(mask)
-
 
             input_mask = np.array(input_mask)
             input_masks.append(input_mask)
