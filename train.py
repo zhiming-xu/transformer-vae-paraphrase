@@ -235,7 +235,7 @@ def train(hparams):
             total_loss, total_predict_count, total_time = 0.0, 0.0, 0.0
             print("global step %d   step-time %.2fs  loss %.3f ppl %.2f" % (global_step, avg_time, avg_loss, ppl))
 
-        if  global_step % 3000 == 0:
+        if  global_step % 1 == 0:
             train_model.model.saver.save(train_sess, ckpt_path, global_step=global_step)
             ckpt = tf.train.get_checkpoint_state(hparams.train_dir)
             if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):

@@ -198,7 +198,7 @@ class TCVAE():
         for i in range(hparams.batch_size):
             if no_random:
                 x = data[(id + i) % len(data)]
-                which_stn = (id + i) % 5
+                which_stn = (id + i) % 2
                 # which_stn = which
             else:
                 x = random.choice(data)
