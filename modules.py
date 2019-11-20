@@ -270,15 +270,6 @@ def w_encoder_attention(queries,
         outputs = tf.layers.dropout(outputs, rate=dropout_rate, training=tf.convert_to_tensor(is_training))
     return outputs, weight
 
-
-
-
-
-
-
-
-
-
 def feedforward(inputs,
                 num_units=[2048, 512],
                 scope="feedforward",

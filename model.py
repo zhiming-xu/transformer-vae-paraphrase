@@ -49,16 +49,14 @@ class TCVAE():
             self.which = tf.placeholder(tf.int32, [None])
 
 
-        with tf.variable_scope("embedding") as scope:
+        with tf.variable_scope("embedding"):
             self.word_embeddings = tf.Variable(self.init_matrix([self.vocab_size, self.emb_dim]))
-            # self.word_embeddings = tf.Variable(hparams.embeddings, trainable=True)
             self.scope_embeddings = tf.Variable(self.init_matrix([9, int(self.emb_dim/2)]))
 
         with tf.variable_scope("project"):
             self.output_layer = layers_core.Dense(self.vocab_size, use_bias=True)
             self.mid_output_layer = layers_core.Dense(self.vocab_size, use_bias=True)
             self.input_layer = layers_core.Dense(self.num_units, use_bias=False)
-
 
         with tf.variable_scope("encoder") as scope:
             self.word_emb = tf.nn.embedding_lookup(self.word_embeddings, self.input_ids)
@@ -72,7 +70,7 @@ class TCVAE():
 
             self.query = tf.get_variable("w_Q", [1, self.num_units], dtype=tf.float32)
             windows = tf.transpose(self.input_windows, [1, 0, 2])
-            layers_outputs = []
+            # layers_outputs = []
 
             post_inputs = inputs
             for i in range(self.num_layers):
@@ -178,11 +176,6 @@ class TCVAE():
                 kl_weights = tf.minimum(tf.to_float(self.global_step) / 20000, 1.0)
                 kld = gaussian_kld(post_mu, post_logvar, prior_mu, prior_logvar)
                 self.loss = tf.reduce_mean(crossent * self.weights) + tf.reduce_mean(kld) * kl_weights
-
-
-
-
-        if self.mode == tf.contrib.learn.ModeKeys.TRAIN:
             with tf.variable_scope("train_op") as scope:
                 optimizer = tf.train.AdamOptimizer(0.0001, beta1=0.9, beta2=0.99, epsilon=1e-9)
                 gradients, v = zip(*optimizer.compute_gradients(self.loss))
@@ -191,17 +184,16 @@ class TCVAE():
 
         self.saver = tf.train.Saver(tf.global_variables())
 
-
     def get_batch(self, data, no_random=False, id=0, which=0):
         hparams = self.hparams
         input_scopes = []
         input_ids = []
         input_positions = []
-        input_lens = []
+        input_lengths = []
         input_masks = []
         input_which = []
         input_windows = []
-        targets = []
+        target_ids = []
         weights = []
         for i in range(hparams.batch_size):
             if no_random:
@@ -214,66 +206,90 @@ class TCVAE():
 
             input_which.append(which_stn)
             mask = []
-            input_scope = []
+            input_stn_id = []
             input_id = []
             input_position = []
             input_mask = []
-            target = []
+            target_id = []
             weight = []
             for j in range(0,5):
+                # add begin of sentence token_idx
                 input_id.append(GO_ID)
-                input_scope.append(j)
+                # add sentence no.
+                input_stn_id.append(j)
+                # add token position
                 input_position.append(0)
+                # iterate over all tokens in the j'th sentence
                 for k in range(0, len(x[j])):
+                    # add the current token_idx
                     input_id.append(x[j][k])
-                    input_scope.append(j)
+                    # add sentence no.
+                    input_stn_id.append(j)
+                    # add token position
                     input_position.append(k + 1)
-                    target.append(x[j][k])
+                    # add current token_idx to target, omit <bos>
+                    target_id.append(x[j][k])
+                    # this is the sentence that we would like to predict
                     if j == which_stn:
+                        # loss weight to 1.
                         weight.append(1.0)
+                        # to be masked by 0
                         mask.append(0)
                     else:
+                        # weight to 0
                         weight.append(0.0)
+                        # keep as it is
                         mask.append(1)
-                target.append(EOS_ID)
+                # finish the j'th, add the <eos> token_idx
+                target_id.append(EOS_ID)
+                # this is the sentence we would like to predict
                 if j == which_stn:
+                    # loss weight to 1.
                     weight.append(1.0)
+                    # <bos> also to be masked by 0
                     mask.append(0)
                 else:
+                    # keep
                     weight.append(0.0)
                     mask.append(1)
                 input_id.append(EOS_ID)
-                input_scope.append(j)
+                input_stn_id.append(j)
                 input_position.append(len(x[j]) + 1)
-                target.append(GO_ID)
+                # begin the (j+1)'th sentence
+                target_id.append(GO_ID)
                 if j == which_stn:
+                    # do not calculate this token's loss
                     weight.append(0.0)
+                    # to be masked by 0
                     mask.append(0)
                 else:
                     weight.append(0.0)
+                    # keep as it is
                     mask.append(1)
+                # for the sentence we would like to mask
                 if j == which_stn:
                     for k in range(len(x[j]) + 2, self.max_single_length):
                         input_id.append(PAD_ID)
-                        input_scope.append(j)
+                        input_stn_id.append(j)
                         input_position.append(k)
-                        target.append(PAD_ID)
+                        target_id.append(PAD_ID)
                         weight.append(0.0)
                         mask.append(0)
-            input_lens.append(len(input_id))
-            for k in range(0, self.max_story_length - input_lens[i]):
+            # length of this story (5 sentences)
+            input_lengths.append(len(input_id))
+            for k in range(0, self.max_story_length - input_lengths[i]):
+                # pad the last sentence
                 input_id.append(PAD_ID)
-                input_scope.append(4)
+                input_stn_id.append(4)
                 input_position.append(0)
-                target.append(PAD_ID)
+                target_id.append(PAD_ID)
                 weight.append(0.0)
                 mask.append(0)
 
-
             input_ids.append(input_id)
-            input_scopes.append(input_scope)
+            input_scopes.append(input_stn_id)
             input_positions.append(input_position)
-            targets.append(target)
+            target_ids.append(target_id)
             weights.append(weight)
 
             tmp_mask = mask.copy()
@@ -283,29 +299,29 @@ class TCVAE():
             for k in range(0,5):
                 start = last
                 if k != 4:
-                    last = input_scope.index(k + 1)
+                    # the last position of the k'th sentence
+                    last = input_stn_id.index(k + 1)
                 else:
                     last = self.max_story_length
                 if k != which_stn:
                     window.append([0] * start + [1] * (last - start) + [0] * (self.max_story_length - last))
             input_windows.append(window)
 
-            for k in range(input_lens[i]):
-                if input_scope[k] != which_stn:
-
+            for k in range(input_lengths[i]):
+                if input_stn_id[k] != which_stn:
                     input_mask.append(mask)
                 else:
                     tmp_mask[k] = 1
                     input_mask.append(tmp_mask.copy())
 
-            for k in range(input_lens[i], self.max_story_length):
+            for k in range(input_lengths[i], self.max_story_length):
                 input_mask.append(mask)
 
 
             input_mask = np.array(input_mask)
             input_masks.append(input_mask)
 
-        return input_ids, input_scopes, input_positions, input_masks, input_lens, input_which, targets, weights, input_windows
+        return input_ids, input_scopes, input_positions, input_masks, input_lengths, input_which, target_ids, weights, input_windows
 
     def train_step(self, sess, data):
         input_ids, input_scopes, input_positions, input_masks, input_lens, input_which, targets, weights, input_windows = self.get_batch(data)
@@ -321,7 +337,7 @@ class TCVAE():
             self.which: input_which
         }
         word_nums = sum(sum(weight) for weight in weights)
-        loss, global_step, _, total_loss = sess.run([self.loss, self.global_step, self.train_op, self.total_loss],
+        _, global_step, _, total_loss = sess.run([self.loss, self.global_step, self.train_op, self.total_loss],
                                                         feed_dict=feed)
         return total_loss, global_step, word_nums
 
@@ -339,7 +355,7 @@ class TCVAE():
             self.input_windows: input_windows,
             self.which: input_which
         }
-        loss, logits = sess.run([self.total_loss, self.logits],
+        loss, _ = sess.run([self.total_loss, self.logits],
                                                 feed_dict=feed)
         word_nums = sum(sum(weight) for weight in weights)
         return loss, word_nums
@@ -351,7 +367,6 @@ class TCVAE():
         given = []
         ans = []
         predict = []
-        hparams = self.hparams
         for i in range(self.hparams.batch_size):
             start_pos.append(input_scopes[i].index(input_which[i]))
             given.append(input_ids[i][:start_pos[i]] + [UNK_ID] * self.max_single_length + input_ids[i][start_pos[i] + self.max_single_length:])
@@ -373,10 +388,6 @@ class TCVAE():
                 input_ids[batch][start_pos[batch] + i + 1] = sample_id[batch][start_pos[batch] + i]
                 predict[batch].append(sample_id[batch][start_pos[batch] + i])
         return given, ans, predict
-
-
-
-
 
     def init_matrix(self, shape):
         return tf.random_normal(shape, stddev=0.1)

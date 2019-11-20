@@ -28,7 +28,7 @@ def add_arguments(parser):
     parser.add_argument("--model_dir", type=str, default="model/", help="Model directory")
     parser.add_argument("--out_dir", type=str, default="output/", help="Out directory")
     parser.add_argument("--train_dir", type=str, default="t-cvae/", help="Training directory")
-    parser.add_argument("--gpu_device", type=str, default="2", help="which gpu to use")
+    parser.add_argument("--gpu_device", type=str, default="0", help="which gpu to use")
 
     parser.add_argument("--train_data", type=str, default="training",
                         help="Training data path")
@@ -213,7 +213,8 @@ def train(hparams):
 
 
 
-    step_loss, step_time, total_predict_count, total_loss, total_time, avg_loss, avg_time = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    step_loss, step_time, total_predict_count, total_loss, total_time, avg_loss, avg_time = \
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
 
     while global_step <= 380000:
@@ -316,10 +317,10 @@ def init_embedding(hparams):
     vocab = []
     for line in f:
         vocab.append(line.rstrip("\n"))
-    # word_vectors = KeyedVectors.load_word2vec_format("GoogleNews-vectors-negative300.bin", binary=True)
+    word_vectors = KeyedVectors.load_word2vec_format("data/GoogleNews-vectors-negative300.bin", binary=True)
 
-    word_vectors = KeyedVectors.load_word2vec_format("roc_vector.txt")
-    # word_vectors = KeyedVectors.load_word2vec_format("glove.840B.300d.txt", binary=False)
+    # word_vectors = KeyedVectors.load_word2vec_format("roc_vector.txt")
+    # word_vectors = KeyedVectors.load_word2vec_format("data/glove.42B.300d.txt")
     # model = Word2Vec(sentences=sent, sg=1, size=256, window=5, min_count=3, hs=1)
     # model.save("word2vec")
     emb = []
@@ -332,7 +333,7 @@ def init_embedding(hparams):
         else:
             emb.append((0.1 * np.random.random([hparams.emb_dim]) - 0.05).astype(np.float32))
 
-    print(" init embedding finished")
+    print("init embedding finished")
     emb = np.array(emb)
     print(num)
     print(emb.shape)
