@@ -21,8 +21,15 @@ from model import TCVAE
 import collections
 from gensim.models import KeyedVectors
 
-import warnings
+import warnings, logging
 warnings.filterwarnings("ignore")
+logging.basicConfig(level=logging.INFO, \
+                    format='%(asctime)s %(module)s %(levelname)-8s %(message)s', \
+                    datefmt='%Y-%m-%d %H:%M:%S', \
+                    handlers=[
+                        logging.FileHandler("t-cvae.log"),
+                        logging.StreamHandler()
+                    ])
 
 FLAGS = None
 # tf.enable_eager_execution()
@@ -146,13 +153,13 @@ def create_model(hparams, model, length=22):
 
 def read_data(src_path):
     data_set = []
-    counter = 0
+    cnt = 0
     max_length1 = 0
     with tf.gfile.GFile(src_path, mode="r") as src_file:
         src = src_file.readline()
         while src:
-            if counter % 100000 == 0:
-                print("  reading data line %d" % counter)
+            if cnt % 100000 == 0:
+                logging.info("reading data line %d" % cnt)
                 sys.stdout.flush()
 
             sentences = []
@@ -168,10 +175,10 @@ def read_data(src_path):
                     s = []
 
             data_set.append(sentences)
-            counter += 1
+            cnt += 1
             src = src_file.readline()
-    print(counter)
-    print(max_length1)
+    logging.info('sentence count: %d' % cnt)
+    logging.info('max length: %d' % max_length1)
     return data_set
 
 
@@ -188,14 +195,14 @@ def train(hparams):
     hparams.add_hparam(name="embeddings", value=embeddings)
 
 
-    print("Vocab load over.")
+    logging.info("Vocab load over.")
     train_model, eval_model, infer_model = create_model(hparams, TCVAE)
     config = get_config_proto(
         log_device_placement=False)
     train_sess = tf.Session(config=config, graph=train_model.graph)
     eval_sess = tf.Session(config=config, graph=eval_model.graph)
     infer_sess = tf.Session(config=config, graph=infer_model.graph)
-    print("Model create over.")
+    logging.info("Model create over.")
     train_data = read_data("data/train.ids")
     valid_data = read_data("data/valid.ids")
     test_data = read_data("data/test.ids")
@@ -205,7 +212,7 @@ def train(hparams):
     ckpt_path = os.path.join(hparams.train_dir, "ckpt")
     with train_model.graph.as_default():
         if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
-            print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
+            logging.info("Reading model parameters from %s" % ckpt.model_checkpoint_path)
             train_model.model.saver.restore(train_sess, ckpt.model_checkpoint_path)
             eval_model.model.saver.restore(eval_sess, ckpt.model_checkpoint_path)
             infer_model.model.saver.restore(infer_sess, ckpt.model_checkpoint_path)
@@ -233,15 +240,15 @@ def train(hparams):
             avg_loss = total_loss / 100
             avg_time = total_time / 100
             total_loss, total_predict_count, total_time = 0.0, 0.0, 0.0
-            print("global step %d   step-time %.2fs  loss %.3f ppl %.2f" % (global_step, avg_time, avg_loss, ppl))
+            logging.info("global step %d   step-time %.2fs  loss %.3f ppl %.2f" % (global_step, avg_time, avg_loss, ppl))
 
-        if  global_step % 1 == 0:
+        if  global_step % 3000 == 0:
             train_model.model.saver.save(train_sess, ckpt_path, global_step=global_step)
             ckpt = tf.train.get_checkpoint_state(hparams.train_dir)
             if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
                 eval_model.model.saver.restore(eval_sess, ckpt.model_checkpoint_path)
                 infer_model.model.saver.restore(infer_sess, ckpt.model_checkpoint_path)
-                print("load eval model.")
+                logging.info("load eval model.")
             else:
                 raise ValueError("ckpt file not found.")
             for id in range(0, int(len(valid_data)/hparams.batch_size)):
@@ -251,9 +258,10 @@ def train(hparams):
             ppl = safe_exp(total_loss / total_predict_count)
 
             total_loss, total_predict_count, total_time = 0.0, 0.0, 0.0
-            print("eval  ppl %.2f" % (ppl))
+            logging.info("eval  ppl %.2f" % (ppl))
             if global_step < 30000:
                 continue
+            logging.info('begin infer')
             x = hparams.train_dir.split("/")[-2]
             f1 = open("output/" + x + "/ref2_file" + str(global_step),"w",encoding="utf-8")
             f2 = open("output/" + x + "/predict2_file" + str(global_step),"w", encoding="utf-8")
@@ -285,14 +293,12 @@ def train(hparams):
                     f1.write(" ".join(ans).replace("_UNK", "_unknown") + "\n")
                     f2.write(" ".join(pred) + "\n")
 
-
-
             f1.close()
             f2.close()
             hyp_file = "output/" + x + "/predict2_file" + str(global_step)
             ref_file = "output/" + x + "/ref2_file" + str(global_step)
             result = os.popen("python multi_bleu.py -ref " + ref_file + " -hyp " + hyp_file)
-            print(result.read())
+            logging.info(result.read())
 
             f3 = open("output/" + x + "/predict2_file" + str(global_step), "r", encoding="utf-8")
             dic1 = {}
@@ -312,9 +318,9 @@ def train(hparams):
                     if line[i] + " " + line[i + 1] not in dic2:
                         dic2[line[i] + " " + line[i + 1]] = 1
                         distinc2 += 1
-            print("distinc1: %.5f" % float(distinc1 / all1))
-            print("distinc2: %.5f" % float(distinc2 / all2))
-            print("infer done.")
+            logging.info("distinc1: %.5f" % float(distinc1 / all1))
+            logging.info("distinc2: %.5f" % float(distinc2 / all2))
+            logging.info("*"*32 + "infer done." + "*"*32)
 
 def init_embedding(hparams):
     f = open("data/vocab_20000", "r", encoding="utf-8")
@@ -337,16 +343,14 @@ def init_embedding(hparams):
         else:
             emb.append((0.1 * np.random.random([hparams.emb_dim]) - 0.05).astype(np.float32))
 
-    print("init embedding finished")
+    logging.info("init embedding finished")
     emb = np.array(emb)
-    print(num)
-    print(emb.shape)
+    logging.info('num of words: %d' % num)
+    logging.info('embedding shape %s' % str(emb.shape))
     return emb
 
 def main(_):
-
     hparams = create_hparams(FLAGS)
-    # train(hparams)
     train(hparams)
 
 if __name__ == "__main__":
@@ -355,6 +359,6 @@ if __name__ == "__main__":
     FLAGS, remaining = my_parser.parse_known_args()
     FLAGS.train_dir = FLAGS.model_dir + FLAGS.train_dir
     FLAGS.output_dir = FLAGS.out_dir + FLAGS.output_dir
-    print(FLAGS)
+    logging.info(FLAGS)
     os.environ["CUDA_VISIBLE_DEVICES"] = FLAGS.gpu_device
     tf.app.run()
