@@ -15,7 +15,7 @@ class TCVAE():
         self.num_heads = hparams.num_heads
         self.learning_rate = tf.Variable(float(hparams.learning_rate), trainable=False)
         self.clip_value = hparams.clip_value
-        self.max_story_length = 105
+        self.max_story_length = 55
         self.max_single_length = 25
         self.latent_dim = hparams.latent_dim
         self.dropout_rate = hparams.dropout_rate
@@ -279,7 +279,7 @@ class TCVAE():
                         mask.append(0)
             # length of this story (5 sentences)
             input_lengths.append(len(input_id))
-            # pad the whole story to len `max_story_length`
+            # pad the i'th story to len `max_story_length`
             for k in range(0, self.max_story_length - input_lengths[i]):
                 input_id.append(PAD_ID)
                 input_stn_id.append(1)

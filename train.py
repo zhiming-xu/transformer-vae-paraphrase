@@ -1,14 +1,10 @@
+#!/usr/bin/env python
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
-import os
-import random
-import sys
-import time
-import logging
-
+import math, random
+import os, time, logging
 import numpy as np
 #from six.moves import range  # pylint: disable=redefined-builtin
 import tensorflow as tf
@@ -70,7 +66,7 @@ def add_arguments(parser):
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size to use during training")
     parser.add_argument("--max_gradient_norm", type=float, default=3.0, help="Clip gradients to this norm")
     parser.add_argument("--learning_rate_decay_factor", type=float, default=0.5, help="Learning rate decays by this much")
-    parser.add_argument("--learning_rate", type=float, default=1, help="Learning rate")
+    parser.add_argument("--learning_rate", type=float, default=.03, help="Learning rate")
     parser.add_argument("--dropout_rate", type=float, default=0.15, help="Dropout rate")
     parser.add_argument("--epoch_num", type=int, default=100, help="Number of epoch")
 
@@ -154,41 +150,38 @@ def create_model(hparams, model, length=22):
 def read_data(src_path):
     data_set = []
     cnt = 0
-    max_length1 = 0
+    max_stn_length = 0
     with tf.gfile.GFile(src_path, mode="r") as src_file:
         src = src_file.readline()
         while src:
             if cnt % 100000 == 0:
                 logging.info("reading data line %d" % cnt)
-                sys.stdout.flush()
-
-            sentences = []
-            s = []
-            for x in src.split(" "):
-                id = int(x)
-                if id != -1:
-                    s.append(id)
+            sample, sentence = [], []
+            token_idx_str_list = src.split(' ')
+            assert(len(token_idx_str_list)>3)
+            for token_idx_str in token_idx_str_list:
+                token_idx = int(token_idx_str)
+                if token_idx != -1:
+                    sentence.append(token_idx)
                 else:
-                    if len(s) > max_length1:
-                        max_length1 = len(s)
-                    sentences.append(s)
-                    s = []
-
-            data_set.append(sentences)
+                    max_stn_length = max(max_stn_length, len(sentence))
+                    # truncate all sentence to a maximum length of 25
+                    sample.append(sentence[:25])
+                    sentence = []
+            data_set.append(sample)
             cnt += 1
             src = src_file.readline()
-    logging.info('sentence count: %d' % cnt)
-    logging.info('max length: %d' % max_length1)
+    logging.info('sample count: %d' % cnt)
+    logging.info('max length of single sentence: %d' % max_stn_length)
     return data_set
 
-
 def safe_exp(value):
-  """Exponentiation with catching of overflow error."""
-  try:
-    ans = math.exp(value)
-  except OverflowError:
-    ans = float("inf")
-  return ans
+    """Exponentiation with catching of overflow error."""
+    try:
+        ans = math.exp(value)
+    except OverflowError:
+        ans = float("inf")
+    return ans
 
 def train(hparams):
     embeddings = init_embedding(hparams)
