@@ -163,13 +163,6 @@ def read_data(src_path):
                 if token_idx != -1:
                     sentence.append(token_idx)
                 else:
-                    '''FIXME: data might have empty field
-                    try:
-                        assert(len(sentence)>1)
-                    except AssertionError:
-                        print(src)
-                        exit(-1)
-                    '''
                     max_stn_length = max(max_stn_length, len(sentence))
                     # truncate all sentence to a maximum length of 25
                     sample.append(sentence[:25])
