@@ -146,7 +146,8 @@ class TCVAE():
             post_mulogvar = tf.layers.dense(post_encode, self.latent_dim * 2, use_bias=False, name="post_fc")
             post_mu, post_logvar = tf.split(post_mulogvar, 2, axis=1)
 
-            prior_mulogvar = tf.layers.dense(tf.layers.dense(prior_encode, 256, activation=tf.nn.tanh), self.latent_dim * 2, use_bias=False, name="prior_fc")
+            prior_mulogvar = tf.layers.dense(tf.layers.dense(prior_encode, 256, activation=tf.nn.tanh), \
+                                             self.latent_dim * 2, use_bias=False, name="prior_fc")
             prior_mu, prior_logvar = tf.split(prior_mulogvar, 2, axis=1)
 
 
@@ -177,9 +178,10 @@ class TCVAE():
                 kld = gaussian_kld(post_mu, post_logvar, prior_mu, prior_logvar)
                 self.loss = tf.reduce_mean(crossent * self.weights) + tf.reduce_mean(kld) * kl_weights
             with tf.variable_scope("train_op") as scope:
-                optimizer = tf.train.AdamOptimizer(0.0001, beta1=0.9, beta2=0.99, epsilon=1e-9)
+                optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=0.9, beta2=0.99, epsilon=1e-9)
+                # optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
                 gradients, v = zip(*optimizer.compute_gradients(self.loss))
-                gradients, _ = tf.clip_by_global_norm(gradients, 5.0)
+                gradients, _ = tf.clip_by_global_norm(gradients, self.clip_value)
                 self.train_op = optimizer.apply_gradients(zip(gradients, v), global_step=self.global_step)
 
         self.saver = tf.train.Saver(tf.global_variables())
@@ -323,10 +325,12 @@ class TCVAE():
             input_mask = np.array(input_mask)
             input_masks.append(input_mask)
 
-        return input_ids, input_scopes, input_positions, input_masks, input_lengths, input_which, target_ids, weights, input_windows
+        return input_ids, input_scopes, input_positions, input_masks, input_lengths, \
+               input_which, target_ids, weights, input_windows
 
     def train_step(self, sess, data):
-        input_ids, input_scopes, input_positions, input_masks, input_lens, input_which, targets, weights, input_windows = self.get_batch(data)
+        input_ids, input_scopes, input_positions, input_masks, input_lens, \
+        input_which, targets, weights, input_windows = self.get_batch(data)
         feed = {
             self.input_ids:input_ids,
             self.input_scopes:input_scopes,
@@ -339,13 +343,15 @@ class TCVAE():
             self.which: input_which
         }
         word_nums = sum(sum(weight) for weight in weights)
-        _, global_step, _, total_loss = sess.run([self.loss, self.global_step, self.train_op, self.total_loss],
-                                                        feed_dict=feed)
+        _, global_step, _, total_loss = sess.run([self.loss, self.global_step, self.train_op, \
+                                                  self.total_loss], feed_dict=feed)
         return total_loss, global_step, word_nums
 
     def eval_step(self, sess, data, no_random=False, id=0):
-        input_ids, input_scopes, input_positions, input_masks, input_lens, input_which, targets, weights, input_windows = self.get_batch(
-            data, no_random, id)
+        input_ids, input_scopes, input_positions, input_masks, input_lens, \
+        input_which, targets, weights, input_windows = self.get_batch(
+            data, no_random, id
+        )
         feed = {
             self.input_ids: input_ids,
             self.input_scopes: input_scopes,

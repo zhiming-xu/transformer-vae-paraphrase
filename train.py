@@ -66,12 +66,12 @@ def add_arguments(parser):
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size to use during training")
     parser.add_argument("--max_gradient_norm", type=float, default=3.0, help="Clip gradients to this norm")
     parser.add_argument("--learning_rate_decay_factor", type=float, default=0.5, help="Learning rate decays by this much")
-    parser.add_argument("--learning_rate", type=float, default=.03, help="Learning rate")
+    parser.add_argument("--learning_rate", type=float, default=1e-5, help="Learning rate")
     parser.add_argument("--dropout_rate", type=float, default=0.15, help="Dropout rate")
     parser.add_argument("--epoch_num", type=int, default=100, help="Number of epoch")
 
 
-def create_hparams(flags):
+def create_args(flags):
     return tf.contrib.training.HParams(
         # dir path
         data_dir=flags.data_dir,
@@ -115,7 +115,6 @@ def get_config_proto(log_device_placement=False, allow_soft_placement=True):
   config_proto.gpu_options.allow_growth = True
   return config_proto
 
-
 class TrainModel(
     collections.namedtuple("TrainModel",
                            ("graph", "model"))):
@@ -131,21 +130,22 @@ class InferModel(
                            ("graph", "model"))):
   pass
 
-def create_model(hparams, model, length=22):
+def create_model(args, model):
     train_graph = tf.Graph()
     with train_graph.as_default():
-        train_model = model(hparams, tf.contrib.learn.ModeKeys.TRAIN)
+        train_model = model(args, tf.contrib.learn.ModeKeys.TRAIN)
 
     eval_graph = tf.Graph()
     with eval_graph.as_default():
-        eval_model = model(hparams, tf.contrib.learn.ModeKeys.EVAL)
+        eval_model = model(args, tf.contrib.learn.ModeKeys.EVAL)
 
     infer_graph = tf.Graph()
     with infer_graph.as_default():
-        infer_model = model(hparams, tf.contrib.learn.ModeKeys.INFER)
+        infer_model = model(args, tf.contrib.learn.ModeKeys.INFER)
 
-    return TrainModel(graph=train_graph, model=train_model), EvalModel(graph=eval_graph, model=eval_model), InferModel(
-        graph=infer_graph, model=infer_model)
+    return TrainModel(graph=train_graph, model=train_model), \
+           EvalModel(graph=eval_graph, model=eval_model), \
+           InferModel(graph=infer_graph, model=infer_model)
 
 def read_data(src_path):
     data_set = []
@@ -158,12 +158,16 @@ def read_data(src_path):
                 logging.info("reading data line %d" % cnt)
             sample, sentence = [], []
             token_idx_str_list = src.split(' ')
-            assert(len(token_idx_str_list)>3)
             for token_idx_str in token_idx_str_list:
                 token_idx = int(token_idx_str)
                 if token_idx != -1:
                     sentence.append(token_idx)
                 else:
+                    try:
+                        assert(len(sentence)>1)
+                    except AssertionError:
+                        print(src)
+                        exit(-1)
                     max_stn_length = max(max_stn_length, len(sentence))
                     # truncate all sentence to a maximum length of 25
                     sample.append(sentence[:25])
@@ -183,26 +187,23 @@ def safe_exp(value):
         ans = float("inf")
     return ans
 
-def train(hparams):
-    embeddings = init_embedding(hparams)
-    hparams.add_hparam(name="embeddings", value=embeddings)
-
-
-    logging.info("Vocab load over.")
-    train_model, eval_model, infer_model = create_model(hparams, TCVAE)
+def train(args):
+    word_embs = init_embedding(args)
+    logging.info("vocab and word embeddings load over.")
+    args.add_hparam(name="embeddings", value=word_embs)
+    train_model, eval_model, infer_model = create_model(args, TCVAE)
     config = get_config_proto(
         log_device_placement=False)
     train_sess = tf.Session(config=config, graph=train_model.graph)
     eval_sess = tf.Session(config=config, graph=eval_model.graph)
     infer_sess = tf.Session(config=config, graph=infer_model.graph)
-    logging.info("Model create over.")
+    logging.info("model create over.")
     train_data = read_data("data/train.ids")
     valid_data = read_data("data/valid.ids")
     test_data = read_data("data/test.ids")
 
-
-    ckpt = tf.train.get_checkpoint_state(hparams.train_dir)
-    ckpt_path = os.path.join(hparams.train_dir, "ckpt")
+    ckpt = tf.train.get_checkpoint_state(args.train_dir)
+    ckpt_path = os.path.join(args.train_dir, "ckpt")
     with train_model.graph.as_default():
         if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
             logging.info("Reading model parameters from %s" % ckpt.model_checkpoint_path)
@@ -213,9 +214,7 @@ def train(hparams):
         else:
             train_sess.run(tf.global_variables_initializer())
             global_step = 0
-    to_vocab, rev_to_vocab = data_utils.initialize_vocabulary(hparams.from_vocab)
-
-
+    to_vocab, rev_to_vocab = data_utils.initialize_vocabulary(args.from_vocab)
 
     step_loss, step_time, total_predict_count, total_loss, total_time, avg_loss, avg_time = \
     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
@@ -225,11 +224,11 @@ def train(hparams):
         start_time = time.time()
         step_loss, global_step, predict_count = train_model.model.train_step(train_sess, train_data)
 
-        total_loss += step_loss / hparams.batch_size
+        total_loss += step_loss / args.batch_size
         total_time += (time.time() - start_time)
         total_predict_count += predict_count
         if global_step % 100 == 0:
-            ppl = safe_exp(total_loss * hparams.batch_size / total_predict_count)
+            ppl = safe_exp(total_loss * args.batch_size / total_predict_count)
             avg_loss = total_loss / 100
             avg_time = total_time / 100
             total_loss, total_predict_count, total_time = 0.0, 0.0, 0.0
@@ -237,15 +236,15 @@ def train(hparams):
 
         if  global_step % 3000 == 0:
             train_model.model.saver.save(train_sess, ckpt_path, global_step=global_step)
-            ckpt = tf.train.get_checkpoint_state(hparams.train_dir)
+            ckpt = tf.train.get_checkpoint_state(args.train_dir)
             if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
                 eval_model.model.saver.restore(eval_sess, ckpt.model_checkpoint_path)
                 infer_model.model.saver.restore(infer_sess, ckpt.model_checkpoint_path)
                 logging.info("load eval model.")
             else:
                 raise ValueError("ckpt file not found.")
-            for id in range(0, int(len(valid_data)/hparams.batch_size)):
-                step_loss, predict_count = eval_model.model.eval_step(eval_sess, valid_data, no_random=True, id=id * hparams.batch_size)
+            for id in range(0, int(len(valid_data)/args.batch_size)):
+                step_loss, predict_count = eval_model.model.eval_step(eval_sess, valid_data, no_random=True, id=id * args.batch_size)
                 total_loss += step_loss
                 total_predict_count += predict_count
             ppl = safe_exp(total_loss / total_predict_count)
@@ -255,27 +254,27 @@ def train(hparams):
             if global_step < 30000:
                 continue
             logging.info('begin infer')
-            x = hparams.train_dir.split("/")[-2]
+            x = args.train_dir.split("/")[-2]
             f1 = open("output/" + x + "/ref2_file" + str(global_step),"w",encoding="utf-8")
             f2 = open("output/" + x + "/predict2_file" + str(global_step),"w", encoding="utf-8")
-            for id in range(0, int(len(valid_data) / hparams.batch_size)):
+            for id in range(0, int(len(valid_data) / args.batch_size)):
 
                 given, answer, predict = infer_model.model.infer_step(infer_sess, valid_data, no_random=True,
-                                                                      id=id * hparams.batch_size)
-                for i in range(hparams.batch_size):
+                                                                      id=id * args.batch_size)
+                for i in range(args.batch_size):
                     sample_output = predict[i]
-                    if hparams.EOS_ID in sample_output:
-                        sample_output = sample_output[:sample_output.index(hparams.EOS_ID)]
+                    if args.EOS_ID in sample_output:
+                        sample_output = sample_output[:sample_output.index(args.EOS_ID)]
                     pred = []
                     for output in sample_output:
                         pred.append(tf.compat.as_str(rev_to_vocab[output]))
 
                     sample_output = answer[i]
-                    if hparams.EOS_ID in sample_output[:]:
-                        if sample_output[0] == hparams.GO_ID:
-                            sample_output = sample_output[1:sample_output.index(hparams.EOS_ID)]
+                    if args.EOS_ID in sample_output[:]:
+                        if sample_output[0] == args.GO_ID:
+                            sample_output = sample_output[1:sample_output.index(args.EOS_ID)]
                         else:
-                            sample_output = sample_output[0:sample_output.index(hparams.EOS_ID)]
+                            sample_output = sample_output[0:sample_output.index(args.EOS_ID)]
                     ans = []
                     for output in sample_output:
                         ans.append(tf.compat.as_str(rev_to_vocab[output]))
@@ -315,35 +314,33 @@ def train(hparams):
             logging.info("distinc2: %.5f" % float(distinc2 / all2))
             logging.info("*"*32 + "infer done." + "*"*32)
 
-def init_embedding(hparams):
-    f = open("data/vocab_20000", "r", encoding="utf-8")
+def init_embedding(args):
     vocab = []
-    for line in f:
-        vocab.append(line.rstrip("\n"))
+    with open("data/vocab_20000", "r", encoding="utf-8") as f:
+        for line in f:
+            vocab.append(line.rstrip("\n"))
     word_vectors = KeyedVectors.load_word2vec_format("data/GoogleNews-vectors-negative300.bin", binary=True)
-
     # word_vectors = KeyedVectors.load_word2vec_format("roc_vector.txt")
     # word_vectors = KeyedVectors.load_word2vec_format("data/glove.42B.300d.txt")
     # model = Word2Vec(sentences=sent, sg=1, size=256, window=5, min_count=3, hs=1)
     # model.save("word2vec")
-    emb = []
-    num = 0
+    word_embs = []
+    num_of_words_with_emb = 0
     for i in range(0, len(vocab)):
         word = vocab[i]
         if word in word_vectors:
-            num += 1
-            emb.append(word_vectors[word])
+            num_of_words_with_emb += 1
+            word_embs.append(word_vectors[word])
         else:
-            emb.append((0.1 * np.random.random([hparams.emb_dim]) - 0.05).astype(np.float32))
-
-    logging.info("init embedding finished")
-    emb = np.array(emb)
-    logging.info('num of words: %d' % num)
-    logging.info('embedding shape %s' % str(emb.shape))
-    return emb
+            word_embs.append((0.1 * np.random.random([args.emb_dim]) - 0.05).astype(np.float32))
+    logging.info("load word embeddings finished")
+    word_embs = np.array(word_embs)
+    logging.info('num of words with embedding: %d' % num_of_words_with_emb)
+    logging.info('embedding matrix shape%s' % str(word_embs.shape))
+    return word_embs
 
 def main(_):
-    hparams = create_hparams(FLAGS)
+    hparams = create_args(FLAGS)
     train(hparams)
 
 if __name__ == "__main__":
