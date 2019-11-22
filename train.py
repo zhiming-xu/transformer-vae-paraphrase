@@ -4,7 +4,7 @@ from __future__ import division
 from __future__ import print_function
 
 import math, random
-import os, time, logging
+import os, time
 import numpy as np
 #from six.moves import range  # pylint: disable=redefined-builtin
 import tensorflow as tf
@@ -17,7 +17,7 @@ from model import TCVAE
 import collections
 from gensim.models import KeyedVectors
 
-import warnings, logging
+import logging, warnings
 warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO, \
                     format='%(asctime)s %(module)s %(levelname)-8s %(message)s', \
@@ -163,11 +163,13 @@ def read_data(src_path):
                 if token_idx != -1:
                     sentence.append(token_idx)
                 else:
+                    '''FIXME: data might have empty field
                     try:
                         assert(len(sentence)>1)
                     except AssertionError:
                         print(src)
                         exit(-1)
+                    '''
                     max_stn_length = max(max_stn_length, len(sentence))
                     # truncate all sentence to a maximum length of 25
                     sample.append(sentence[:25])
@@ -232,7 +234,8 @@ def train(args):
             avg_loss = total_loss / 100
             avg_time = total_time / 100
             total_loss, total_predict_count, total_time = 0.0, 0.0, 0.0
-            logging.info("global step %d   step-time %.2fs  loss %.3f ppl %.2f" % (global_step, avg_time, avg_loss, ppl))
+            logging.info("global step %d   step-time %.2fs  loss %.3f ppl %.2f" % \
+                        (global_step, avg_time, avg_loss, ppl))
 
         if  global_step % 3000 == 0:
             train_model.model.saver.save(train_sess, ckpt_path, global_step=global_step)
@@ -243,8 +246,9 @@ def train(args):
                 logging.info("load eval model.")
             else:
                 raise ValueError("ckpt file not found.")
-            for id in range(0, int(len(valid_data)/args.batch_size)):
-                step_loss, predict_count = eval_model.model.eval_step(eval_sess, valid_data, no_random=True, id=id * args.batch_size)
+            for batch_idx in range(0, int(len(valid_data)/args.batch_size)):
+                step_loss, predict_count = eval_model.model.eval_step(eval_sess, valid_data, no_random=True, \
+                                                                      batch_idx=batch_idx * args.batch_size)
                 total_loss += step_loss
                 total_predict_count += predict_count
             ppl = safe_exp(total_loss / total_predict_count)
@@ -257,10 +261,9 @@ def train(args):
             x = args.train_dir.split("/")[-2]
             f1 = open("output/" + x + "/ref2_file" + str(global_step),"w",encoding="utf-8")
             f2 = open("output/" + x + "/predict2_file" + str(global_step),"w", encoding="utf-8")
-            for id in range(0, int(len(valid_data) / args.batch_size)):
-
+            for batch_idx in range(0, int(len(valid_data) / args.batch_size)):
                 given, answer, predict = infer_model.model.infer_step(infer_sess, valid_data, no_random=True,
-                                                                      id=id * args.batch_size)
+                                                                      batch_idx=batch_idx * args.batch_size)
                 for i in range(args.batch_size):
                     sample_output = predict[i]
                     if args.EOS_ID in sample_output:
@@ -278,13 +281,12 @@ def train(args):
                     ans = []
                     for output in sample_output:
                         ans.append(tf.compat.as_str(rev_to_vocab[output]))
-                    if id == 0 and i < 8:
+                    if batch_idx == 0 and i < 8:
                         print("answer: ", " ".join(ans))
                         print("predict: ", " ".join(pred))
 
                     f1.write(" ".join(ans).replace("_UNK", "_unknown") + "\n")
                     f2.write(" ".join(pred) + "\n")
-
             f1.close()
             f2.close()
             hyp_file = "output/" + x + "/predict2_file" + str(global_step)
@@ -336,7 +338,7 @@ def init_embedding(args):
     logging.info("load word embeddings finished")
     word_embs = np.array(word_embs)
     logging.info('num of words with embedding: %d' % num_of_words_with_emb)
-    logging.info('embedding matrix shape%s' % str(word_embs.shape))
+    logging.info('embedding matrix shape: %s' % str(word_embs.shape))
     return word_embs
 
 def main(_):

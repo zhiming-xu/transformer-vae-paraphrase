@@ -347,10 +347,10 @@ class TCVAE():
                                                   self.total_loss], feed_dict=feed)
         return total_loss, global_step, word_nums
 
-    def eval_step(self, sess, data, no_random=False, id=0):
+    def eval_step(self, sess, data, no_random=False, batch_idx=0):
         input_ids, input_scopes, input_positions, input_masks, input_lens, \
         input_which, targets, weights, input_windows = self.get_batch(
-            data, no_random, id
+            data, no_random, batch_idx
         )
         feed = {
             self.input_ids: input_ids,
@@ -363,14 +363,13 @@ class TCVAE():
             self.input_windows: input_windows,
             self.which: input_which
         }
-        loss, _ = sess.run([self.total_loss, self.logits],
-                                                feed_dict=feed)
+        loss, _ = sess.run([self.total_loss, self.logits], feed_dict=feed)
         word_nums = sum(sum(weight) for weight in weights)
         return loss, word_nums
 
-    def infer_step(self, sess, data, no_random=False, id=0, which=0):
+    def infer_step(self, sess, data, no_random=False, batch_idx=0, which=0):
         input_ids, input_scopes, input_positions, input_masks, input_lens, input_which, targets, weights, input_windows = self.get_batch(
-            data, no_random, id, which=which)
+            data, no_random, batch_idx, which=which)
         start_pos = []
         given = []
         ans = []
