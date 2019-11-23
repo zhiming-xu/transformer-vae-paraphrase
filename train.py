@@ -49,9 +49,9 @@ def add_arguments(parser):
     parser.add_argument("--from_vocab", type=str, default="/vocab_20000",
                         help="from vocab path")
     parser.add_argument("--from_vocab_size", type=int, default=20000, help="vocab size")
-    parser.add_argument("--to_vocab_size", type=int, default=20000)
     parser.add_argument("--to_vocab", type=str, default="/vocab_20000",
                         help="to vocab path")
+    parser.add_argument("--to_vocab_size", type=int, default=20000)
     
     parser.add_argument("--max_train_data_size", type=int, default=0, help=\
                         "Limit on the size of training data (0: no limit)")
