@@ -61,7 +61,8 @@ class TCVAE():
         with tf.variable_scope("encoder") as scope:
             self.word_emb = tf.nn.embedding_lookup(self.word_embeddings, self.input_ids)
             self.scope_emb = tf.nn.embedding_lookup(self.scope_embeddings, self.input_scopes)
-            self.pos_emb = positional_encoding(self.input_positions, self.batch_size, self.max_single_length, int(self.emb_dim/2))
+            self.pos_emb = positional_encoding(self.input_positions, self.batch_size, \
+                                               self.max_single_length, int(self.emb_dim/2))
 
             # self.embs = self.word_emb + self.scope_emb + self.pos_emb
             self.embs = tf.concat([self.word_emb, self.scope_emb, self.pos_emb], axis=2)
@@ -114,8 +115,9 @@ class TCVAE():
                     post_outputs = post_outputs + post_inputs
                     post_inputs = normalize(post_outputs)
                     # feed forward network
-                    post_outputs = feedforward(post_inputs, [self.num_units * 2, self.num_units], is_training=self.is_training,
-                                               dropout_rate=self.dropout_rate, scope="f1",reuse=tf.AUTO_REUSE)
+                    post_outputs = feedforward(post_inputs, [self.num_units * 2, self.num_units], \
+                                               is_training=self.is_training, dropout_rate=self.dropout_rate, \
+                                               scope="f1",reuse=tf.AUTO_REUSE)
                     # add and layer_norm
                     post_outputs = post_outputs + inputs
                     post_inputs = normalize(post_outputs)
@@ -164,7 +166,7 @@ class TCVAE():
             inputs = tf.layers.dense(inputs, self.num_units, activation=tf.tanh, use_bias=False, name="last")
 
             self.logits = self.output_layer(inputs)
-            self.s = self.logits
+            # self.s = self.logits
             self.sample_id = tf.argmax(self.logits, axis=2)
         
         if self.mode != tf.contrib.learn.ModeKeys.INFER:

@@ -11,13 +11,15 @@ import tensorflow as tf
 import os
 
 import data_utils
-from data_utils import *
+# from data_utils import *
 import argparse
 from model import TCVAE
 import collections
 from gensim.models import KeyedVectors
 
-import logging, warnings
+import warnings
+warnings.filterwarnings("ignore")
+import logging
 logging.basicConfig(level=logging.INFO, \
                     format='%(asctime)s %(module)s %(levelname)-8s %(message)s', \
                     datefmt='%Y-%m-%d %H:%M:%S', \
@@ -25,33 +27,35 @@ logging.basicConfig(level=logging.INFO, \
                         logging.FileHandler("t-cvae.log"),
                         logging.StreamHandler()
                     ])
-warnings.filterwarnings("ignore")
 FLAGS = None
 
 def add_arguments(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
+    # folders
     parser.add_argument("--data_dir", type=str, default="data/", help="Data directory")
     parser.add_argument('--dataset', type=str, default='mscoco', help='which dataset to use')
     parser.add_argument("--model_dir", type=str, default="model/", help="Model directory")
     parser.add_argument("--output_dir", type=str, default="output/", help="Out directory")
+    # gpu_device
     parser.add_argument("--gpu_device", type=str, default="0", help="which gpu to use")
-
+    # data files
     parser.add_argument("--train_data", type=str, default="/train.ids",
                         help="Training data path")
     parser.add_argument("--valid_data", type=str, default="/valid.ids",
                         help="Valid data path")
     parser.add_argument("--test_data", type=str, default="/test.ids",
                         help="Test data path")
-
+    # vocab
     parser.add_argument("--from_vocab", type=str, default="/vocab_20000",
                         help="from vocab path")
+    parser.add_argument("--from_vocab_size", type=int, default=20000, help="vocab size")
+    parser.add_argument("--to_vocab_size", type=int, default=20000)
     parser.add_argument("--to_vocab", type=str, default="/vocab_20000",
                         help="to vocab path")
-
-    parser.add_argument("--max_train_data_size", type=int, default=0, help="Limit on the size of training data (0: no limit)")
-
-    parser.add_argument("--from_vocab_size", type=int, default=20000, help="source vocabulary size")
-    parser.add_argument("--to_vocab_size", type=int, default=20000, help="target vocabulary size")
+    
+    parser.add_argument("--max_train_data_size", type=int, default=0, help=\
+                        "Limit on the size of training data (0: no limit)")
+    # modeal and training
     parser.add_argument("--num_layers", type=int, default=2, help="Number of layers in the model")
     parser.add_argument("--num_units", type=int, default=256, help="Size of each model layer")
     parser.add_argument("--num_heads", type=int, default=8, help="Number of heads in attention")
@@ -59,7 +63,8 @@ def add_arguments(parser):
     parser.add_argument("--latent_dim", type=int, default=64, help="Dimension of latent variable")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size to use during training")
     parser.add_argument("--max_gradient_norm", type=float, default=3.0, help="Clip gradients to this norm")
-    parser.add_argument("--learning_rate_decay_factor", type=float, default=0.5, help="Learning rate decays by this much")
+    parser.add_argument("--learning_rate_decay_factor", type=float, default=0.5, \
+                        help="Learning rate decays by this much")
     parser.add_argument("--learning_rate", type=float, default=1e-5, help="Learning rate")
     parser.add_argument("--dropout_rate", type=float, default=0.15, help="Dropout rate")
     parser.add_argument("--epoch_num", type=int, default=100, help="Number of epoch")
@@ -220,7 +225,7 @@ def train(args):
             avg_loss = total_loss / 100
             avg_time = total_time / 100
             total_loss, total_predict_count, total_time = 0.0, 0.0, 0.0
-            logging.info("global step %d   step-time %.2fs  loss %.3f ppl %.2f" % \
+            logging.info("global step %d   step-time %.2fs  loss %.3f  ppl %.2f" % \
                         (global_step, avg_time, avg_loss, ppl))
 
         if  global_step % 3000 == 0:
@@ -240,14 +245,14 @@ def train(args):
             ppl = safe_exp(total_loss / total_predict_count)
 
             total_loss, total_predict_count, total_time = 0.0, 0.0, 0.0
-            logging.info("eval  ppl %.2f" % (ppl))
+            logging.info("eval ppl %.2f" % (ppl))
             if global_step < 30000:
                 continue
             logging.info('begin infer')
             f1 = open("output/" + args.dataset + "/ref2_file" + str(global_step),"w",encoding="utf-8")
             f2 = open("output/" + args.dataset + "/predict2_file" + str(global_step),"w", encoding="utf-8")
             for batch_idx in range(0, int(len(valid_data) / args.batch_size)):
-                given, answer, predict = infer_model.model.infer_step(infer_sess, valid_data, no_random=True,
+                given, answer, predict = infer_model.model.infer_step(infer_sess, test_data, no_random=True,
                                                                       batch_idx=batch_idx * args.batch_size)
                 for i in range(args.batch_size):
                     sample_output = predict[i]
