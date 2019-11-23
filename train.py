@@ -18,7 +18,6 @@ import collections
 from gensim.models import KeyedVectors
 
 import logging, warnings
-warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO, \
                     format='%(asctime)s %(module)s %(levelname)-8s %(message)s', \
                     datefmt='%Y-%m-%d %H:%M:%S', \
@@ -26,33 +25,28 @@ logging.basicConfig(level=logging.INFO, \
                         logging.FileHandler("t-cvae.log"),
                         logging.StreamHandler()
                     ])
-
+warnings.filterwarnings("ignore")
 FLAGS = None
-# tf.enable_eager_execution()
+
 def add_arguments(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
     parser.add_argument("--data_dir", type=str, default="data/", help="Data directory")
+    parser.add_argument('--dataset', type=str, default='mscoco', help='which dataset to use')
     parser.add_argument("--model_dir", type=str, default="model/", help="Model directory")
-    parser.add_argument("--out_dir", type=str, default="output/", help="Out directory")
-    parser.add_argument("--train_dir", type=str, default="t-cvae/", help="Training directory")
+    parser.add_argument("--output_dir", type=str, default="output/", help="Out directory")
     parser.add_argument("--gpu_device", type=str, default="0", help="which gpu to use")
 
-    parser.add_argument("--train_data", type=str, default="training",
+    parser.add_argument("--train_data", type=str, default="/train.ids",
                         help="Training data path")
-
-    parser.add_argument("--valid_data", type=str, default="dev",
+    parser.add_argument("--valid_data", type=str, default="/valid.ids",
                         help="Valid data path")
-
-    parser.add_argument("--test_data", type=str, default="test",
+    parser.add_argument("--test_data", type=str, default="/test.ids",
                         help="Test data path")
 
-    parser.add_argument("--from_vocab", type=str, default="data/vocab_20000",
+    parser.add_argument("--from_vocab", type=str, default="/vocab_20000",
                         help="from vocab path")
-    parser.add_argument("--to_vocab", type=str, default="data/vocab_20000",
+    parser.add_argument("--to_vocab", type=str, default="/vocab_20000",
                         help="to vocab path")
-
-    parser.add_argument("--output_dir", type=str, default="tfm/")
-
 
     parser.add_argument("--max_train_data_size", type=int, default=0, help="Limit on the size of training data (0: no limit)")
 
@@ -75,9 +69,9 @@ def create_args(flags):
     return tf.contrib.training.HParams(
         # dir path
         data_dir=flags.data_dir,
-        train_dir=flags.train_dir,
+        model_dir=flags.model_dir,
         output_dir=flags.output_dir,
-
+        dataset = flags.dataset,
         # data params
         batch_size=flags.batch_size,
         from_vocab_size=flags.from_vocab_size,
@@ -90,8 +84,8 @@ def create_args(flags):
         valid_data=flags.valid_data,
         test_data=flags.test_data,
 
-        from_vocab=flags.from_vocab,
-        to_vocab=flags.to_vocab,
+        from_vocab=flags.data_dir+flags.dataset+flags.from_vocab,
+        to_vocab=flags.data_dir+flags.dataset+flags.to_vocab,
 
         dropout_rate=flags.dropout_rate,
         init_weight=0.1,
@@ -107,28 +101,28 @@ def create_args(flags):
     )
 
 def get_config_proto(log_device_placement=False, allow_soft_placement=True):
-  # GPU options:
-  # https://www.tensorflow.org/versions/r0.10/how_tos/using_gpu/index.html
-  config_proto = tf.ConfigProto(
-      log_device_placement=log_device_placement,
-      allow_soft_placement=allow_soft_placement)
-  config_proto.gpu_options.allow_growth = True
-  return config_proto
+    # GPU options:
+    # https://www.tensorflow.org/versions/r0.10/how_tos/using_gpu/index.html
+    config_proto = tf.ConfigProto(
+        log_device_placement=log_device_placement,
+        allow_soft_placement=allow_soft_placement)
+    config_proto.gpu_options.allow_growth = True
+    return config_proto
 
 class TrainModel(
     collections.namedtuple("TrainModel",
                            ("graph", "model"))):
-  pass
+    pass
 
 class EvalModel(
     collections.namedtuple("EvalModel",
                            ("graph", "model"))):
-  pass
+    pass
 
 class InferModel(
     collections.namedtuple("InferModel",
                            ("graph", "model"))):
-  pass
+    pass
 
 def create_model(args, model):
     train_graph = tf.Graph()
@@ -187,18 +181,17 @@ def train(args):
     logging.info("vocab and word embeddings load over.")
     args.add_hparam(name="embeddings", value=word_embs)
     train_model, eval_model, infer_model = create_model(args, TCVAE)
-    config = get_config_proto(
-        log_device_placement=False)
+    config = get_config_proto(log_device_placement=False)
     train_sess = tf.Session(config=config, graph=train_model.graph)
     eval_sess = tf.Session(config=config, graph=eval_model.graph)
     infer_sess = tf.Session(config=config, graph=infer_model.graph)
     logging.info("model create over.")
-    train_data = read_data("data/train.ids")
-    valid_data = read_data("data/valid.ids")
-    test_data = read_data("data/test.ids")
+    train_data = read_data(args.data_dir + args.dataset + args.train_data)
+    valid_data = read_data(args.data_dir + args.dataset + args.valid_data)
+    test_data = read_data(args.data_dir + args.dataset + args.test_data)
 
-    ckpt = tf.train.get_checkpoint_state(args.train_dir)
-    ckpt_path = os.path.join(args.train_dir, "ckpt")
+    ckpt = tf.train.get_checkpoint_state(args.model_dir+args.dataset)
+    ckpt_path = os.path.join(args.model_dir, "ckpt")
     with train_model.graph.as_default():
         if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
             logging.info("Reading model parameters from %s" % ckpt.model_checkpoint_path)
@@ -232,7 +225,7 @@ def train(args):
 
         if  global_step % 3000 == 0:
             train_model.model.saver.save(train_sess, ckpt_path, global_step=global_step)
-            ckpt = tf.train.get_checkpoint_state(args.train_dir)
+            ckpt = tf.train.get_checkpoint_state(args.model_dir)
             if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
                 eval_model.model.saver.restore(eval_sess, ckpt.model_checkpoint_path)
                 infer_model.model.saver.restore(infer_sess, ckpt.model_checkpoint_path)
@@ -251,9 +244,8 @@ def train(args):
             if global_step < 30000:
                 continue
             logging.info('begin infer')
-            x = args.train_dir.split("/")[-2]
-            f1 = open("output/" + x + "/ref2_file" + str(global_step),"w",encoding="utf-8")
-            f2 = open("output/" + x + "/predict2_file" + str(global_step),"w", encoding="utf-8")
+            f1 = open("output/" + args.dataset + "/ref2_file" + str(global_step),"w",encoding="utf-8")
+            f2 = open("output/" + args.dataset + "/predict2_file" + str(global_step),"w", encoding="utf-8")
             for batch_idx in range(0, int(len(valid_data) / args.batch_size)):
                 given, answer, predict = infer_model.model.infer_step(infer_sess, valid_data, no_random=True,
                                                                       batch_idx=batch_idx * args.batch_size)
@@ -282,12 +274,12 @@ def train(args):
                     f2.write(" ".join(pred) + "\n")
             f1.close()
             f2.close()
-            hyp_file = "output/" + x + "/predict2_file" + str(global_step)
-            ref_file = "output/" + x + "/ref2_file" + str(global_step)
+            hyp_file = "output/" + args.dataset + "/predict2_file" + str(global_step)
+            ref_file = "output/" + args.dataset + "/ref2_file" + str(global_step)
             result = os.popen("python multi_bleu.py -ref " + ref_file + " -hyp " + hyp_file)
             logging.info(result.read())
 
-            f3 = open("output/" + x + "/predict2_file" + str(global_step), "r", encoding="utf-8")
+            f3 = open(hyp_file, "r", encoding="utf-8")
             dic1 = {}
             dic2 = {}
             distinc1, distinc2 = 0, 0
@@ -311,7 +303,7 @@ def train(args):
 
 def init_embedding(args):
     vocab = []
-    with open("data/vocab_20000", "r", encoding="utf-8") as f:
+    with open(args.from_vocab, "r", encoding="utf-8") as f:
         for line in f:
             vocab.append(line.rstrip("\n"))
     word_vectors = KeyedVectors.load_word2vec_format("data/GoogleNews-vectors-negative300.bin", binary=True)
@@ -342,8 +334,8 @@ if __name__ == "__main__":
     my_parser = argparse.ArgumentParser()
     add_arguments(my_parser)
     FLAGS, remaining = my_parser.parse_known_args()
-    FLAGS.train_dir = FLAGS.model_dir + FLAGS.train_dir
-    FLAGS.output_dir = FLAGS.out_dir + FLAGS.output_dir
+    FLAGS.model_dir = FLAGS.model_dir + FLAGS.dataset
+    FLAGS.output_dir = FLAGS.output_dir + FLAGS.dataset
     logging.info(FLAGS)
     os.environ["CUDA_VISIBLE_DEVICES"] = FLAGS.gpu_device
     tf.app.run()

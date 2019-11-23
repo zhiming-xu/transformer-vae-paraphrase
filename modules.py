@@ -6,23 +6,25 @@ from tensorflow.python.ops import array_ops
 def gaussian_kld(recog_mu, recog_logvar, prior_mu, prior_logvar):
     kld = -0.5 * tf.reduce_sum(1 + (recog_logvar - prior_logvar)
                                - tf.div(tf.pow(prior_mu - recog_mu, 2), tf.exp(prior_logvar))
-                               - tf.div(tf.exp(recog_logvar), tf.exp(prior_logvar)), reduction_indices=1)
+                               - tf.div(tf.exp(recog_logvar), tf.exp(prior_logvar)), \
+                               reduction_indices=1)
     return kld
 
 def gelu(input_tensor):
-  """Gaussian Error Linear Unit.
-  This is a smoother version of the RELU.
-  Original paper: https://arxiv.org/abs/1606.08415
-  Args:
-    input_tensor: float Tensor to perform activation.
-  Returns:
-    `input_tensor` with the GELU activation applied.
-  """
-  cdf = 0.5 * (1.0 + tf.erf(input_tensor / tf.sqrt(2.0)))
-  return input_tensor * cdf
+    """Gaussian Error Linear Unit.
+    This is a smoother version of the RELU.
+    Original paper: https://arxiv.org/abs/1606.08415
+    Args:
+        input_tensor: float Tensor to perform activation.
+    Returns:
+        `input_tensor` with the GELU activation applied.
+    """
+    cdf = 0.5 * (1.0 + tf.erf(input_tensor / tf.sqrt(2.0)))
+    return input_tensor * cdf
 
 def norm_log_liklihood(x, mu, logvar):
-    return -0.5*tf.reduce_sum(tf.log(2*np.pi) + logvar + tf.div(tf.pow((x-mu), 2), tf.exp(logvar)), reduction_indices=1)
+    return -0.5*tf.reduce_sum(tf.log(2*np.pi) + logvar + tf.div(tf.pow((x-mu), 2), \
+                              tf.exp(logvar)), reduction_indices=1)
 
 
 def sample_gaussian(mu, logvar):
@@ -36,7 +38,8 @@ def reverse(input_, seq_lengths, seq_dim, batch_dim):
     if seq_lengths is not None:
         return array_ops.reverse_sequence(
             input=input_, seq_lengths=seq_lengths,
-            seq_dim=seq_dim, batch_dim=batch_dim)
+            seq_dim=seq_dim, batch_dim=batch_dim
+        )
     else:
         return array_ops.reverse(input_, axis=[seq_dim])
 
@@ -92,11 +95,11 @@ def multihead_attention(queries,
       num_units: A scalar. Attention size.
       dropout_rate: A floating point number.
       is_training: Boolean. Controller of mechanism for dropout.
-      causality: Boolean. If true, units that reference the future are masked.
+      use_mask: Boolean. If true, units that reference the future are masked.
       num_heads: An int. Number of heads.
       scope: Optional scope for `variable_scope`.
       reuse: Boolean, whether to reuse the weights of a previous layer
-        by the same name.
+      by the same name.
 
     Returns
       A 3d tensor with shape of (N, T_q, C)
@@ -107,11 +110,9 @@ def multihead_attention(queries,
             num_units = queries.get_shape().as_list[-1]
 
         # Linear projections
-
         Q = tf.layers.dense(queries, num_units, activation=None, use_bias=False, name="q")  # (N, T_q, C)
         K = tf.layers.dense(keys, num_units, activation=None, use_bias=False, name="k")  # (N, T_k, C)
         V = tf.layers.dense(keys, num_units, activation=None, use_bias=False, name="v")  # (N, T_k, C)
-
 
         # Split and concat
         Q_ = tf.concat(tf.split(Q, num_heads, axis=2), axis=0)  # (h*N, T_q, C/h)
@@ -142,7 +143,6 @@ def multihead_attention(queries,
 
         outputs = tf.nn.softmax(outputs)  # (h*N, T_q, T_k)
 
-
         query_masks = tf.sequence_mask(query_length, tf.shape(queries)[1], dtype=tf.float32)
         query_masks = tf.tile(query_masks, [num_heads, 1])  # (h*N, T_q)
         query_masks = tf.tile(tf.expand_dims(query_masks, -1), [1, 1, tf.shape(keys)[1]])  # (h*N, T_q, T_k)
@@ -152,11 +152,10 @@ def multihead_attention(queries,
         outputs = tf.matmul(outputs, V_)  # ( h*N, T_q, C/h)
 
         # Restore shape
-        outputs = tf.layers.dense(tf.concat(tf.split(outputs, num_heads, axis=0), axis=2), num_units, activation=None,
-                                  use_bias=False)  # (N, T_q, C)
+        outputs = tf.layers.dense(tf.concat(tf.split(outputs, num_heads, axis=0), axis=2), num_units, \
+                                  activation=None, use_bias=False)  # (N, T_q, C)
         outputs = tf.layers.dropout(outputs, rate=dropout_rate, training=tf.convert_to_tensor(is_training))
         return outputs
-
 
 def positional_encoding(inputs,
                         batch_size,
@@ -225,23 +224,21 @@ def w_encoder_attention(queries,
       num_units: A scalar. Attention size.
       dropout_rate: A floating point number.
       is_training: Boolean. Controller of mechanism for dropout.
-      causality: Boolean. If true, units that reference the future are masked.
+      using_mask: Boolean. If true, units that reference the future are masked.
       num_heads: An int. Number of heads.
       scope: Optional scope for `variable_scope`.
       reuse: Boolean, whether to reuse the weights of a previous layer
-        by the same name.
+      by the same name.
 
     Returns
       A 3d tensor with shape of (N, T_q, C)
     '''
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
         # Set the fall back option for num_units
-        # print(queries)
-        # print(queries.get_shape().as_list)
         if num_units is None:
             num_units = queries.get_shape().as_list[-1]
+        
         # Linear projections
-
         Q = tf.layers.dense(queries, num_units, activation=None, use_bias=False)  # (N, T_q, C)
         K = tf.layers.dense(keys, num_units, activation=None, use_bias=False)  # (N, T_k, C)
         V = tf.layers.dense(keys, num_units, activation=None, use_bias=False)  # (N, T_k, C)
