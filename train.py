@@ -195,7 +195,7 @@ def train(args):
     valid_data = read_data(args.data_dir + args.dataset + args.valid_data)
     test_data = read_data(args.data_dir + args.dataset + args.test_data)
 
-    ckpt = tf.train.get_checkpoint_state(args.model_dir+args.dataset)
+    ckpt = tf.train.get_checkpoint_state(args.model_dir)
     ckpt_path = os.path.join(args.model_dir, "ckpt")
     with train_model.graph.as_default():
         if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
